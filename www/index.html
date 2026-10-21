@@ -185,27 +185,106 @@ input[type=text]:focus{outline:none;border-color:var(--y)}
 <div id="modal"></div>
 <div class="toast" id="toast" role="status"></div>
 
-<script>/* Capa de conexion: reemplaza la base de datos de claude.ai por un servidor propio (server/server.js) por WebSocket. */
+<script>/* Capa de conexion: reemplaza la base de datos de claude.ai.
+   Modo mesa P2P: un celular hace de servidor (anfitrion) y los demas se unen con un codigo (WebRTC con PeerJS).
+   Modo servidor propio: WebSocket contra server/server.js. */
 (function(){
 var LS=window.localStorage,store={get:function(k){try{return LS.getItem(k)}catch(e){return null}},set:function(k,v){try{LS.setItem(k,v)}catch(e){}}};
-var isApp=!!(window.Capacitor)||location.protocol==='file:'||location.hostname==='localhost'&&!location.port;
+var PEERJS='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+var qs=(location.search.match(/[?&]mesa=([A-Za-z0-9]+)/)||[])[1];
 var myId=store.get('rummy_id');if(!myId){myId='u'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);store.set('rummy_id',myId)}
 var secure=location.protocol==='https:'||store.get('rummy_secure')==='1';
-var cfg={name:store.get('rummy_name')||'',host:store.get('rummy_host')||(isApp?'':location.host)};
-var ws=null,open=false,queue=[],subs={},colls={},reqs={},rid=0,offline=false,ready,resolveReady,rejectReady;
+var cfg={name:store.get('rummy_name')||'',code:(qs||store.get('rummy_code')||'').toUpperCase(),host:store.get('rummy_host')||''};
+var mode='',ws=null,peer=null,conn=null,hub=null,self=null,open=false,queue=[],subs={},colls={},reqs={},rid=0,offline=false,rt=0,ready,resolveReady,rejectReady;
 ready=new Promise(function(a,b){resolveReady=a;rejectReady=b});
-function send(m){var s=JSON.stringify(m);if(open)ws.send(s);else queue.push(s)}
-function connect(){
- try{ws=new WebSocket((secure?'wss://':'ws://')+cfg.host)}catch(e){retry();return}
- ws.onopen=function(){open=true;send({t:'hello',id:myId,name:cfg.name});Object.keys(subs).forEach(function(p){send({t:'sub',path:p})});Object.keys(colls).forEach(function(c){send({t:'subc',coll:c})});queue.splice(0).forEach(function(s){ws.send(s)});setDot(1)};
- ws.onmessage=function(ev){var m;try{m=JSON.parse(ev.data)}catch(e){return}
-  if(m.t==='doc'&&subs[m.path])subs[m.path].forEach(function(cb){cb({exists:m.data!=null,data:function(){return m.data}})});
-  else if(m.t==='coll'&&colls[m.coll])colls[m.coll].forEach(function(cb){cb({docs:m.docs.map(function(d){return{data:function(){return d}}})})});
-  else if(m.t==='profiles'&&reqs[m.rid]){reqs[m.rid](m.profiles);delete reqs[m.rid]}};
- ws.onclose=function(){open=false;setDot(0);retry()};
+/* ---- hub (servidor en el navegador del anfitrion) ---- */
+function Hub(){
+ var docs={},profiles={},clients=[],st=0;
+ try{var j=JSON.parse(store.get('rummy_hub')||'null');if(j){docs=j.docs||{};profiles=j.profiles||{}}}catch(e){}
+ function save(){clearTimeout(st);st=setTimeout(function(){store.set('rummy_hub',JSON.stringify({docs:docs,profiles:profiles}))},500)}
+ function collDocs(c){return Object.keys(docs).filter(function(k){return k.indexOf(c+'/')===0}).map(function(k){return docs[k]}).sort(function(a,b){return(b.at||0)-(a.at||0)}).slice(0,60)}
+ function pushDoc(p){var m={t:'doc',path:p,data:docs[p]===undefined?null:docs[p]};clients.forEach(function(c){if(c.paths[p])c.send(m)})}
+ function pushColl(p){if(p.indexOf('/')<0)return;var c=p.split('/')[0],m={t:'coll',coll:c,docs:collDocs(c)};clients.forEach(function(x){if(x.colls[c])x.send(m)})}
+ return{
+  add:function(c){clients.push(c)},
+  remove:function(c){var i=clients.indexOf(c);if(i>=0)clients.splice(i,1)},
+  handle:function(c,m){
+   if(!m)return;
+   if(m.t==='hello'){profiles[m.id]={name:String(m.name||'Jugador').slice(0,20),avatarUrl:''};save()}
+   else if(m.t==='sub'){c.paths[m.path]=1;c.send({t:'doc',path:m.path,data:docs[m.path]===undefined?null:docs[m.path]})}
+   else if(m.t==='subc'){c.colls[m.coll]=1;c.send({t:'coll',coll:m.coll,docs:collDocs(m.coll)})}
+   else if(m.t==='set'){docs[m.path]=m.data;save();pushDoc(m.path);pushColl(m.path)}
+   else if(m.t==='upd'){docs[m.path]=Object.assign({},docs[m.path]||{},m.data);save();pushDoc(m.path);pushColl(m.path)}
+   else if(m.t==='del'){delete docs[m.path];save();pushDoc(m.path);pushColl(m.path)}
+   else if(m.t==='profiles'){var o={};(m.ids||[]).forEach(function(id){o[id]=profiles[id]||null});c.send({t:'profiles',rid:m.rid,profiles:o})}
+  }};
+}
+/* ---- transporte ---- */
+function send(m){
+ if(mode==='host'){hub.handle(self,m);return}
+ if(!open){queue.push(m);return}
+ if(mode==='ws')ws.send(JSON.stringify(m));else if(mode==='guest'){try{conn.send(m)}catch(e){}}
+}
+function opened(){open=true;setDot(1);send({t:'hello',id:myId,name:cfg.name});Object.keys(subs).forEach(function(p){send({t:'sub',path:p})});Object.keys(colls).forEach(function(c){send({t:'subc',coll:c})});queue.splice(0).forEach(send)}
+function handleMsg(m){
+ if(!m)return;
+ if(m.t==='doc'&&subs[m.path])subs[m.path].forEach(function(cb){cb({exists:m.data!=null,data:function(){return m.data}})});
+ else if(m.t==='coll'&&colls[m.coll])colls[m.coll].forEach(function(cb){cb({docs:m.docs.map(function(d){return{data:function(){return d}}})})});
+ else if(m.t==='profiles'&&reqs[m.rid]){reqs[m.rid](m.profiles);delete reqs[m.rid]}
+}
+function loadPeer(ok,fail){
+ if(window.Peer)return ok();
+ var s=document.createElement('script');s.src=PEERJS;s.onload=function(){window.Peer?ok():fail()};s.onerror=fail;document.head.appendChild(s);
+}
+function peerOpts(){return window.RUMMY_PEER_CFG||{}}
+function keepAwake(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').catch(function(){})}catch(e){}}
+function startHost(code,cb){
+ loadPeer(function(){
+  var done=false;function fin(e){if(e)window.RUMMY_LASTERR=e.type||e.message;if(!done){done=true;cb(e)}}
+  hub=Hub();self={paths:{},colls:{},send:function(m){setTimeout(function(){handleMsg(m)},0)}};hub.add(self);
+  peer=new Peer('rummy-'+code,peerOpts());
+  peer.on('open',function(){mode='host';setCode(code,'host');opened();keepAwake();fin(null)});
+  peer.on('connection',function(c){
+   var cl={paths:{},colls:{},send:function(m){try{c.send(m)}catch(e){}}};hub.add(cl);
+   c.on('data',function(m){hub.handle(cl,m)});c.on('close',function(){hub.remove(cl)});c.on('error',function(){hub.remove(cl)});
+  });
+  peer.on('disconnected',function(){try{peer.reconnect()}catch(e){}});
+  peer.on('error',function(e){fin(e)});
+ },function(){cb(new Error('sin-lib'))});
+}
+function startGuest(code,cb){
+ loadPeer(function(){
+  var done=false;function fin(e){if(e)window.RUMMY_LASTERR=e.type||e.message;if(!done){done=true;cb(e)}}
+  peer=new Peer('rg-'+myId+'-'+Math.random().toString(36).slice(2,6),peerOpts());
+  function dial(){
+   mode='guest';conn=peer.connect('rummy-'+code,{reliable:true,serialization:'json'});
+   var to=setTimeout(function(){fin(new Error('timeout'))},12000);
+   conn.on('open',function(){clearTimeout(to);setCode(code,'guest');opened();fin(null)});
+   conn.on('data',handleMsg);
+   conn.on('close',function(){open=false;setDot(0);if(!offline&&done)setTimeout(dial,2500)});
+  }
+  peer.on('open',dial);
+  peer.on('disconnected',function(){try{peer.reconnect()}catch(e){}});
+  peer.on('error',function(e){fin(e)});
+ },function(){cb(new Error('sin-lib'))});
+}
+function wsConnect(){
+ try{ws=new WebSocket((secure?'wss://':'ws://')+cfg.host)}catch(e){wsRetry();return}
+ mode='ws';
+ ws.onopen=function(){opened()};
+ ws.onmessage=function(ev){var m;try{m=JSON.parse(ev.data)}catch(e){return}handleMsg(m)};
+ ws.onclose=function(){open=false;setDot(0);wsRetry()};
  ws.onerror=function(){try{ws.close()}catch(e){}};
 }
-var rt=0;function retry(){if(offline)return;clearTimeout(rt);rt=setTimeout(connect,2000)}
+function wsRetry(){if(offline)return;clearTimeout(rt);rt=setTimeout(wsConnect,2000)}
+function setCode(code,role){cfg.code=code;window.RUMMY_CODE=code;window.RUMMY_ROLE=role;store.set('rummy_code',code);store.set('rummy_role',role)}
+window.rummyShare=function(){
+ var url=location.protocol.indexOf('http')===0?location.origin+location.pathname+'?mesa='+cfg.code:'';
+ var txt='Vení a jugar al Rummy Mendocino. Código de mesa: '+cfg.code+(url?'\n'+url:'');
+ try{if(navigator.share){navigator.share({text:txt}).catch(function(){});return}}catch(e){}
+ try{navigator.clipboard.writeText(txt).then(function(){toastMsg('Copiado')},function(){toastMsg(cfg.code)})}catch(e){toastMsg(cfg.code)}
+};
+function toastMsg(t){var d=document.getElementById('toast');if(d){d.textContent=t;d.classList.add('on');setTimeout(function(){d.classList.remove('on')},1800)}}
 function setDot(on){var d=document.getElementById('rdot');if(d)d.style.background=on?'#4cff8a':'#ff4a4a'}
 function docRef(path){return{
  set:function(d){send({t:'set',path:path,data:d});return Promise.resolve()},
@@ -219,16 +298,35 @@ var DBO={doc:docRef,collection:function(c){return{
 var USERO={me:function(){return Promise.resolve({id:myId,name:cfg.name||'Vos',avatarUrl:''})},can:function(){return Promise.resolve(true)},
  profiles:function(ids){return new Promise(function(res){var r=++rid;reqs[r]=res;send({t:'profiles',ids:ids,rid:r})})}};
 window.claude={use:function(n){return ready.then(function(){return n==='user'?USERO:DBO})}};
-/* pantalla de conexion */
+/* ---- pantalla de conexion ---- */
+var CODE_ABC='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function newCode(){var s='',a=new Uint8Array(5);crypto.getRandomValues(a);for(var i=0;i<5;i++)s+=CODE_ABC[a[i]%CODE_ABC.length];return s}
+var IN='width:100%;height:44px;margin-top:4px;border:4px solid #fff;background:#000;color:#fff;font:22px VT323,monospace;padding:0 10px;text-transform:uppercase';
+var BT='min-height:48px;border:4px solid #ff8a00;font:24px VT323,monospace;text-transform:uppercase;cursor:pointer;width:100%';
 function ask(){
  var o=document.createElement('div');
- o.style.cssText='position:fixed;inset:0;z-index:99;background:#1d0b36;display:flex;align-items:center;justify-content:center;padding:16px;font:22px/1.2 VT323,monospace;color:#fff';
- o.innerHTML='<div style="max-width:360px;width:100%;border:4px solid #fff;background:#000;padding:16px;display:flex;flex-direction:column;gap:10px"><div style="font:400 14px/1.4 \'Press Start 2P\',monospace;color:#ffff00">RUMMY</div><label>Tu nombre<input id="rn" type="text" maxlength="20" style="width:100%;height:44px;margin-top:4px;border:4px solid #fff;background:#000;color:#fff;font:22px VT323,monospace;padding:0 10px"></label>'+(isApp?'<label>Servidor (IP:3000 o https://...)<input id="rh" type="text" inputmode="url" placeholder="192.168.1.20:3000" style="width:100%;height:44px;margin-top:4px;border:4px solid #fff;background:#000;color:#fff;font:22px VT323,monospace;padding:0 10px"></label>':'')+'<button id="rgo" style="min-height:48px;background:#ff8a00;color:#000;border:4px solid #ff8a00;font:24px VT323,monospace;text-transform:uppercase;cursor:pointer">Entrar a la mesa</button><button id="rno" style="min-height:40px;background:#000;color:#fff;border:4px solid #777;font:20px VT323,monospace;text-transform:uppercase;cursor:pointer">Jugar sin conexión</button><div style="color:#a8a8a8;font-size:19px">Todos tienen que estar en el mismo WiFi que la compu que corre el servidor.</div></div>';
+ o.style.cssText='position:fixed;inset:0;z-index:99;background:#1d0b36;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;font:22px/1.2 VT323,monospace;color:#fff';
+ o.innerHTML='<div style="max-width:360px;width:100%;border:4px solid #fff;background:#000;padding:16px;display:flex;flex-direction:column;gap:10px"><div style="font:400 14px/1.4 \'Press Start 2P\',monospace;color:#ffff00">RUMMY</div>'+
+ '<label>Tu nombre<input id="rn" type="text" maxlength="20" style="'+IN+';text-transform:none"></label>'+
+ '<button id="rnew" style="'+BT+';background:#ff8a00;color:#000">Crear mesa nueva</button>'+
+ '<div style="color:#a8a8a8;font-size:19px">o unite a la de un familiar:</div>'+
+ '<div style="display:flex;gap:8px"><input id="rc" type="text" maxlength="5" placeholder="CODIGO" style="'+IN+';margin:0;flex:1;min-width:0"><button id="rjoin" style="'+BT+';width:auto;padding:0 14px;background:#000;color:#ff8a00">Unirme</button></div>'+
+ '<div id="rmsg" style="color:#ff8a00;min-height:22px"></div>'+
+ '<button id="rno" style="min-height:40px;background:#000;color:#fff;border:4px solid #777;font:20px VT323,monospace;text-transform:uppercase;cursor:pointer">Jugar sin conexión</button>'+
+ '<button id="rsv" style="background:none;border:0;color:#a8a8a8;font:18px VT323,monospace;text-decoration:underline;cursor:pointer">Usar un servidor propio</button>'+
+ '<div id="rsvb" hidden style="display:none;flex-direction:column;gap:8px"><input id="rh" type="text" inputmode="url" placeholder="192.168.1.20:3000" style="'+IN+';text-transform:none"><button id="rhgo" style="'+BT+';background:#000;color:#ff8a00">Conectar</button></div></div>';
  document.body.appendChild(o);
- var n=o.querySelector('#rn'),h=o.querySelector('#rh');n.value=cfg.name;if(h)h.value=cfg.host;
- o.querySelector('#rgo').onclick=function(){var nm=(n.value||'').trim()||'Jugador';var raw=h?(h.value||'').trim():cfg.host;if(h){secure=/^(https|wss):/.test(raw);store.set('rummy_secure',secure?'1':'0')}var ho=raw.replace(/^(https?|wss?):\/\//,'').replace(/\/+$/,'');if(!ho){h&&h.focus();return}
-  cfg.name=nm;cfg.host=ho.indexOf(':')<0&&isApp&&!secure?ho+':3000':ho;store.set('rummy_name',nm);store.set('rummy_host',cfg.host);o.remove();connect();resolveReady()};
- o.querySelector('#rno').onclick=function(){offline=true;o.remove();rejectReady(new Error('offline'))};
+ var $=function(i){return o.querySelector('#'+i)},msg=function(t){$('rmsg').textContent=t};
+ $('rn').value=cfg.name;$('rc').value=qs?cfg.code:'';$('rh').value=cfg.host;
+ function name(){var n=($('rn').value||'').trim()||'Jugador';cfg.name=n;store.set('rummy_name',n);return n}
+ function ok(){o.remove();resolveReady()}
+ function busy(b){['rnew','rjoin','rno'].forEach(function(i){$(i).disabled=b})}
+ $('rnew').onclick=function(){name();busy(true);msg('Creando la mesa...');var tries=0;(function go(){var c=(store.get('rummy_role')==='host'&&store.get('rummy_code')&&tries===0)?store.get('rummy_code'):newCode();tries++;startHost(c,function(e){if(!e)return ok();if(e.type==='unavailable-id'&&tries<4){try{peer.destroy()}catch(x){}return go()}busy(false);msg(e.message==='sin-lib'?'Hace falta internet para crear la mesa.':'No se pudo crear la mesa. Probá de nuevo.')})})()};
+ $('rjoin').onclick=function(){var c=($('rc').value||'').trim().toUpperCase();if(c.length<4){msg('Escribí el código de 5 letras.');return}name();busy(true);msg('Buscando la mesa...');startGuest(c,function(e){if(!e)return ok();busy(false);try{peer.destroy()}catch(x){}msg(e.message==='sin-lib'?'Hace falta internet para unirte.':'No encuentro esa mesa. Revisá el código y que el anfitrión tenga la app abierta.')})};
+ $('rno').onclick=function(){offline=true;o.remove();rejectReady(new Error('offline'))};
+ $('rsv').onclick=function(){var b=$('rsvb');b.style.display=b.style.display==='none'?'flex':'none'};
+ $('rhgo').onclick=function(){name();var raw=($('rh').value||'').trim();if(!raw)return;secure=/^(https|wss):/.test(raw);store.set('rummy_secure',secure?'1':'0');var ho=raw.replace(/^(https?|wss?):\/\//,'').replace(/\/+$/,'');cfg.host=(ho.indexOf(':')<0&&!secure)?ho+':3000':ho;store.set('rummy_host',cfg.host);wsConnect();ok()};
+ if(qs){setTimeout(function(){$('rjoin').click()},50)}
 }
 function badge(){var d=document.createElement('div');d.id='rdot';d.style.cssText='position:fixed;right:max(6px,env(safe-area-inset-right,0px));top:max(6px,env(safe-area-inset-top,0px));width:10px;height:10px;border:2px solid #000;background:#ff4a4a;z-index:50;pointer-events:none';document.body.appendChild(d)}
 function start(){badge();ask()}
@@ -606,7 +704,7 @@ function panelHTML(){
    }).join('')+'</table></section>';
   }
  }
-  h+='<section class="box"><h3>Cómo conectar otro celular</h3><ul style="margin:0;padding-left:20px"><li>Una compu de la casa corre el servidor (node server.js).</li><li>Cada celular abre la app, escribe su nombre y la IP del servidor.</li><li>Uno abre la mesa, los demás tocan Sentarme y se reparte.</li></ul><p class="dim">Cada jugador ve solo sus cartas y los juegos bajados de todos.</p></section>';
+  h+='<section class="box"><h3>Código de la mesa</h3>'+(window.RUMMY_CODE?'<h2 style="font-size:22px;letter-spacing:4px">'+window.RUMMY_CODE+'</h2><div class="row"><button class="ub p" data-act="share">Compartir</button></div><p class="dim">Pasales el código o el link. Quien creó la mesa tiene que dejar la app abierta.</p>':'<p>Esta mesa usa un servidor propio. Todos tienen que estar conectados a él.</p>')+'</section>';
  }
  return h;
 }
@@ -978,6 +1076,7 @@ document.addEventListener('click',function(e){
  var t=e.target.closest('[data-act]');if(!t)return;
  var a=t.getAttribute('data-act');
  switch(a){
+  case'share':window.rummyShare&&window.rummyShare();break;
   case'rules':MODAL='rules';render();break;
   case'closem':MODAL='';render();break;
   case'panel':view=MODE==='online'?'panel':'menu';MS='main';MODAL='';render();break;

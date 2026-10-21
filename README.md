@@ -6,18 +6,27 @@ Rummy como se juega en Mendoza. App Android (APK) con mesa familiar por WiFi.
 
 Hacé doble clic en `Jugar Rummy.bat` (necesita [Node.js](https://nodejs.org) instalado). Muestra una dirección como `http://192.168.1.20:3000`: abrila en el navegador de cada celular conectado al mismo WiFi y ya se juega. En Chrome, menú de tres puntos > Agregar a pantalla de inicio, y queda con ícono.
 
-## Sin compu: desde el celular, gratis
+## Sin compu ni servidor: un celular hace de anfitrión
 
-El servidor también sirve el juego, así que se puede dejar en internet sin usar ninguna compu:
+El juego es un solo archivo, `www/index.html`. Se puede subir a cualquier hosting gratis de páginas estáticas, o instalar como APK, y no necesita servidor:
 
-1. Entrá a [render.com](https://render.com) desde el celular y creá una cuenta con GitHub.
-2. New > Blueprint, elegí este repositorio y confirmá. Render lee `render.yaml` y lo publica en unos 3 minutos.
-3. Te da una dirección tipo `https://rummy-mendocino.onrender.com`. Pasala por WhatsApp a la familia: abren el link, escriben su nombre y juegan, cada uno desde su casa.
-4. En Chrome, Agregar a pantalla de inicio deja el ícono como una app.
+1. Uno abre el juego, escribe su nombre y toca **Crear mesa nueva**. Aparece un código de 5 letras (también está en Jugar > Local, con el botón Compartir).
+2. Los demás abren el mismo juego, escriben su nombre, ponen el código y tocan **Unirme**. Si usan el link que arma el botón Compartir, entran solos.
+3. Funciona desde casas distintas, con WiFi o datos. Es conexión directa entre celulares (WebRTC con PeerJS), no hace falta ninguna cuenta.
 
-Limitaciones del plan gratis: después de un rato sin uso se duerme y la primera visita tarda cerca de un minuto en despertar, y al reiniciarse se pierde la mesa abierta (se vuelve a armar en 10 segundos).
+Lo que hay que saber:
+- El anfitrión tiene que dejar el juego abierto y la pantalla prendida. Si cierra la app, la mesa se corta. Si vuelve a entrar y toca Crear mesa, recupera el mismo código y la partida guardada.
+- Hace falta internet para conectarse (el primer contacto pasa por el servicio gratuito de PeerJS).
+- Si una red muy restringida bloquea la conexión directa, probar con datos móviles.
 
-## 1. Servidor (una compu de la casa)
+### Dónde subir el archivo (gratis)
+
+- **Netlify**: app.netlify.com/drop, arrastrás `index.html` y te da un link https.
+- **Cloudflare Pages**: Workers & Pages > Create > Pages > Upload assets.
+- **GitHub Pages**: Settings > Pages del repositorio. En cuentas gratis el repositorio tiene que ser público.
+- Los "website builders" tipo Wix o Google Sites solo sirven si permiten pegar código HTML completo; muchas veces lo meten en un recuadro que limita funciones. Netlify o Cloudflare son más simples.
+
+## Opcional: servidor propio en la casa
 
 Necesita Node 18 o más nuevo.
 
@@ -48,7 +57,7 @@ En Windows, si el firewall pregunta, permití el acceso en redes privadas.
 ## 3. Jugar en familia
 
 1. Todos en el mismo WiFi que la compu del servidor.
-2. En la app: nombre y dirección del servidor (solo `192.168.1.20:3000`).
+2. En la app: nombre y, abajo, "Usar un servidor propio" con la dirección (solo `192.168.1.20:3000`).
 3. Jugar > Local (familia). Uno crea el grupo, los demás se unen, uno abre la mesa, todos tocan Sentarme y se reparte.
 
 El punto verde arriba a la derecha indica que hay conexión. "Jugar sin conexión" permite jugar contra bots sin servidor.

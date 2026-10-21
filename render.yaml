@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: rummy-mendocino
-    runtime: node
-    plan: free
-    rootDir: server
-    buildCommand: npm install
-    startCommand: node server.js
