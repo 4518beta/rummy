@@ -190,12 +190,13 @@ input[type=text]:focus{outline:none;border-color:var(--y)}
 var LS=window.localStorage,store={get:function(k){try{return LS.getItem(k)}catch(e){return null}},set:function(k,v){try{LS.setItem(k,v)}catch(e){}}};
 var isApp=!!(window.Capacitor)||location.protocol==='file:'||location.hostname==='localhost'&&!location.port;
 var myId=store.get('rummy_id');if(!myId){myId='u'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);store.set('rummy_id',myId)}
+var secure=location.protocol==='https:'||store.get('rummy_secure')==='1';
 var cfg={name:store.get('rummy_name')||'',host:store.get('rummy_host')||(isApp?'':location.host)};
 var ws=null,open=false,queue=[],subs={},colls={},reqs={},rid=0,offline=false,ready,resolveReady,rejectReady;
 ready=new Promise(function(a,b){resolveReady=a;rejectReady=b});
 function send(m){var s=JSON.stringify(m);if(open)ws.send(s);else queue.push(s)}
 function connect(){
- try{ws=new WebSocket('ws://'+cfg.host)}catch(e){retry();return}
+ try{ws=new WebSocket((secure?'wss://':'ws://')+cfg.host)}catch(e){retry();return}
  ws.onopen=function(){open=true;send({t:'hello',id:myId,name:cfg.name});Object.keys(subs).forEach(function(p){send({t:'sub',path:p})});Object.keys(colls).forEach(function(c){send({t:'subc',coll:c})});queue.splice(0).forEach(function(s){ws.send(s)});setDot(1)};
  ws.onmessage=function(ev){var m;try{m=JSON.parse(ev.data)}catch(e){return}
   if(m.t==='doc'&&subs[m.path])subs[m.path].forEach(function(cb){cb({exists:m.data!=null,data:function(){return m.data}})});
@@ -222,11 +223,11 @@ window.claude={use:function(n){return ready.then(function(){return n==='user'?US
 function ask(){
  var o=document.createElement('div');
  o.style.cssText='position:fixed;inset:0;z-index:99;background:#1d0b36;display:flex;align-items:center;justify-content:center;padding:16px;font:22px/1.2 VT323,monospace;color:#fff';
- o.innerHTML='<div style="max-width:360px;width:100%;border:4px solid #fff;background:#000;padding:16px;display:flex;flex-direction:column;gap:10px"><div style="font:400 14px/1.4 \'Press Start 2P\',monospace;color:#ffff00">RUMMY</div><label>Tu nombre<input id="rn" type="text" maxlength="20" style="width:100%;height:44px;margin-top:4px;border:4px solid #fff;background:#000;color:#fff;font:22px VT323,monospace;padding:0 10px"></label>'+(isApp?'<label>Servidor (IP:3000)<input id="rh" type="text" inputmode="url" placeholder="192.168.1.20:3000" style="width:100%;height:44px;margin-top:4px;border:4px solid #fff;background:#000;color:#fff;font:22px VT323,monospace;padding:0 10px"></label>':'')+'<button id="rgo" style="min-height:48px;background:#ff8a00;color:#000;border:4px solid #ff8a00;font:24px VT323,monospace;text-transform:uppercase;cursor:pointer">Entrar a la mesa</button><button id="rno" style="min-height:40px;background:#000;color:#fff;border:4px solid #777;font:20px VT323,monospace;text-transform:uppercase;cursor:pointer">Jugar sin conexión</button><div style="color:#a8a8a8;font-size:19px">Todos tienen que estar en el mismo WiFi que la compu que corre el servidor.</div></div>';
+ o.innerHTML='<div style="max-width:360px;width:100%;border:4px solid #fff;background:#000;padding:16px;display:flex;flex-direction:column;gap:10px"><div style="font:400 14px/1.4 \'Press Start 2P\',monospace;color:#ffff00">RUMMY</div><label>Tu nombre<input id="rn" type="text" maxlength="20" style="width:100%;height:44px;margin-top:4px;border:4px solid #fff;background:#000;color:#fff;font:22px VT323,monospace;padding:0 10px"></label>'+(isApp?'<label>Servidor (IP:3000 o https://...)<input id="rh" type="text" inputmode="url" placeholder="192.168.1.20:3000" style="width:100%;height:44px;margin-top:4px;border:4px solid #fff;background:#000;color:#fff;font:22px VT323,monospace;padding:0 10px"></label>':'')+'<button id="rgo" style="min-height:48px;background:#ff8a00;color:#000;border:4px solid #ff8a00;font:24px VT323,monospace;text-transform:uppercase;cursor:pointer">Entrar a la mesa</button><button id="rno" style="min-height:40px;background:#000;color:#fff;border:4px solid #777;font:20px VT323,monospace;text-transform:uppercase;cursor:pointer">Jugar sin conexión</button><div style="color:#a8a8a8;font-size:19px">Todos tienen que estar en el mismo WiFi que la compu que corre el servidor.</div></div>';
  document.body.appendChild(o);
  var n=o.querySelector('#rn'),h=o.querySelector('#rh');n.value=cfg.name;if(h)h.value=cfg.host;
- o.querySelector('#rgo').onclick=function(){var nm=(n.value||'').trim()||'Jugador';var ho=h?(h.value||'').trim().replace(/^https?:\/\//,'').replace(/^ws:\/\//,''):cfg.host;if(!ho){h&&h.focus();return}
-  cfg.name=nm;cfg.host=ho.indexOf(':')<0&&isApp?ho+':3000':ho;store.set('rummy_name',nm);store.set('rummy_host',cfg.host);o.remove();connect();resolveReady()};
+ o.querySelector('#rgo').onclick=function(){var nm=(n.value||'').trim()||'Jugador';var raw=h?(h.value||'').trim():cfg.host;if(h){secure=/^(https|wss):/.test(raw);store.set('rummy_secure',secure?'1':'0')}var ho=raw.replace(/^(https?|wss?):\/\//,'').replace(/\/+$/,'');if(!ho){h&&h.focus();return}
+  cfg.name=nm;cfg.host=ho.indexOf(':')<0&&isApp&&!secure?ho+':3000':ho;store.set('rummy_name',nm);store.set('rummy_host',cfg.host);o.remove();connect();resolveReady()};
  o.querySelector('#rno').onclick=function(){offline=true;o.remove();rejectReady(new Error('offline'))};
 }
 function badge(){var d=document.createElement('div');d.id='rdot';d.style.cssText='position:fixed;right:max(6px,env(safe-area-inset-right,0px));top:max(6px,env(safe-area-inset-top,0px));width:10px;height:10px;border:2px solid #000;background:#ff4a4a;z-index:50;pointer-events:none';document.body.appendChild(d)}
