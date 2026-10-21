@@ -190,6 +190,7 @@ input[type=text]:focus{outline:none;border-color:var(--y)}
    Modo servidor propio: WebSocket contra server/server.js. */
 (function(){
 var LS=window.localStorage,store={get:function(k){try{return LS.getItem(k)}catch(e){return null}},set:function(k,v){try{LS.setItem(k,v)}catch(e){}}};
+var VER='v4';
 var PEERJS='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
 var qs=(location.search.match(/[?&]mesa=([A-Za-z0-9]+)/)||[])[1];
 var myId=store.get('rummy_id');if(!myId){myId='u'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);store.set('rummy_id',myId)}
@@ -206,7 +207,7 @@ function Hub(){
  function pushDoc(p){var m={t:'doc',path:p,data:docs[p]===undefined?null:docs[p]};clients.forEach(function(c){if(c.paths[p])c.send(m)})}
  function pushColl(p){if(p.indexOf('/')<0)return;var c=p.split('/')[0],m={t:'coll',coll:c,docs:collDocs(c)};clients.forEach(function(x){if(x.colls[c])x.send(m)})}
  return{
-  add:function(c){clients.push(c)},
+  add:function(c){clients.push(c)},count:function(){return clients.length},
   remove:function(c){var i=clients.indexOf(c);if(i>=0)clients.splice(i,1)},
   handle:function(c,m){
    if(!m)return;
@@ -237,6 +238,7 @@ function loadPeer(ok,fail){
  var s=document.createElement('script');s.src=PEERJS;s.onload=function(){window.Peer?ok():fail()};s.onerror=fail;document.head.appendChild(s);
 }
 function peerOpts(){return window.RUMMY_PEER_CFG||{}}
+function peers(){window.RUMMY_N=hub?hub.count()-1:0;if(window.rummyRender)window.rummyRender()}
 function keepAwake(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').catch(function(){})}catch(e){}}
 function startHost(code,cb){
  loadPeer(function(){
@@ -245,8 +247,8 @@ function startHost(code,cb){
   peer=new Peer('rummy-'+code,peerOpts());
   peer.on('open',function(){mode='host';setCode(code,'host');opened();keepAwake();fin(null)});
   peer.on('connection',function(c){
-   var cl={paths:{},colls:{},send:function(m){try{c.send(m)}catch(e){}}};hub.add(cl);
-   c.on('data',function(m){hub.handle(cl,m)});c.on('close',function(){hub.remove(cl)});c.on('error',function(){hub.remove(cl)});
+   var cl={paths:{},colls:{},send:function(m){try{c.send(m)}catch(e){}}};hub.add(cl);peers();
+   c.on('data',function(m){hub.handle(cl,m)});c.on('close',function(){hub.remove(cl);peers()});c.on('error',function(){hub.remove(cl);peers()});
   });
   peer.on('disconnected',function(){try{peer.reconnect()}catch(e){}});
   peer.on('error',function(e){fin(e)});
@@ -258,7 +260,7 @@ function startGuest(code,cb){
   peer=new Peer('rg-'+myId+'-'+Math.random().toString(36).slice(2,6),peerOpts());
   function dial(){
    mode='guest';conn=peer.connect('rummy-'+code,{reliable:true,serialization:'json'});
-   var to=setTimeout(function(){fin(new Error('timeout'))},12000);
+   var to=setTimeout(function(){fin(new Error('timeout'))},25000);
    conn.on('open',function(){clearTimeout(to);setCode(code,'guest');opened();fin(null)});
    conn.on('data',handleMsg);
    conn.on('close',function(){open=false;setDot(0);if(!offline&&done)setTimeout(dial,2500)});
@@ -313,6 +315,7 @@ function ask(){
  '<div style="display:flex;gap:8px"><input id="rc" type="text" maxlength="5" placeholder="CODIGO" style="'+IN+';margin:0;flex:1;min-width:0"><button id="rjoin" style="'+BT+';width:auto;padding:0 14px;background:#000;color:#ff8a00">Unirme</button></div>'+
  '<div id="rmsg" style="color:#ff8a00;min-height:22px"></div>'+
  '<button id="rno" style="min-height:40px;background:#000;color:#fff;border:4px solid #777;font:20px VT323,monospace;text-transform:uppercase;cursor:pointer">Jugar sin conexión</button>'+
+'<div style="color:#777;font-size:16px;text-align:right">'+VER+'</div>'+
  '<button id="rsv" style="background:none;border:0;color:#a8a8a8;font:18px VT323,monospace;text-decoration:underline;cursor:pointer">Usar un servidor propio</button>'+
  '<div id="rsvb" hidden style="display:none;flex-direction:column;gap:8px"><input id="rh" type="text" inputmode="url" placeholder="192.168.1.20:3000" style="'+IN+';text-transform:none"><button id="rhgo" style="'+BT+';background:#000;color:#ff8a00">Conectar</button></div></div>';
  document.body.appendChild(o);
@@ -705,7 +708,7 @@ function panelHTML(){
    }).join('')+'</table></section>';
   }
  }
-  h+='<section class="box"><h3>Código de la mesa</h3>'+(window.RUMMY_CODE?'<h2 style="font-size:22px;letter-spacing:4px">'+window.RUMMY_CODE+'</h2><div class="row"><button class="ub p" data-act="share">Compartir</button></div><p class="dim">Pasales el código o el link. Quien creó la mesa tiene que dejar la app abierta.</p>':'<p>Esta mesa usa un servidor propio. Todos tienen que estar conectados a él.</p>')+'</section>';
+  h+='<section class="box"><h3>Código de la mesa</h3>'+(window.RUMMY_CODE?'<h2 style="font-size:22px;letter-spacing:4px">'+window.RUMMY_CODE+'</h2><div class="row"><button class="ub p" data-act="share">Compartir</button></div><p>'+(window.RUMMY_ROLE==='host'?'Conectados ahora: '+(window.RUMMY_N||0)+' además de vos.':'Conectado a la mesa.')+'</p><p class="dim">Pasales el código o el link. Quien creó la mesa tiene que dejar la app abierta.</p>':'<p>Esta mesa usa un servidor propio. Todos tienen que estar conectados a él.</p>')+'</section>';
  }
  return h;
 }
@@ -1329,6 +1332,6 @@ async function init(){
  }
  render();
 }
-init();
+window.rummyRender=render;init();
 })();
 </script>
