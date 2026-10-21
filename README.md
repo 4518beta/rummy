@@ -2,6 +2,10 @@
 
 Rummy como se juega en Mendoza. App Android (APK) con mesa familiar por WiFi.
 
+## 0. La forma fácil
+
+Hacé doble clic en `Jugar Rummy.bat` (necesita [Node.js](https://nodejs.org) instalado). Muestra una dirección como `http://192.168.1.20:3000`: abrila en el navegador de cada celular conectado al mismo WiFi y ya se juega. En Chrome, menú de tres puntos > Agregar a pantalla de inicio, y queda con ícono.
+
 ## 1. Servidor (una compu de la casa)
 
 Necesita Node 18 o más nuevo.
