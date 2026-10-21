@@ -1,0 +1,11 @@
+{
+  "name": "rummy-mendocino",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rummy como se juega en Mendoza, app Android con mesa familiar en red local",
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0"
+  }
+}
