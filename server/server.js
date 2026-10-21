@@ -1,4 +1,4 @@
-// Servidor de Cuyum Rummy: guarda la mesa familiar y la sincroniza por WebSocket.
+// Servidor de Cuyum Rummy: guarda la mesa y la sincroniza por WebSocket.
 // Uso: npm install && node server.js   (puerto 3000, o PORT=xxxx)
 const http=require('http'),fs=require('fs'),path=require('path'),os=require('os');
 const {WebSocketServer}=require('ws');
