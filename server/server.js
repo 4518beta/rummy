@@ -1,4 +1,4 @@
-// Servidor de Rummy Mendocino: guarda la mesa familiar y la sincroniza por WebSocket.
+// Servidor de Cuyum Rummy: guarda la mesa familiar y la sincroniza por WebSocket.
 // Uso: npm install && node server.js   (puerto 3000, o PORT=xxxx)
 const http=require('http'),fs=require('fs'),path=require('path'),os=require('os');
 const {WebSocketServer}=require('ws');
@@ -32,7 +32,7 @@ wss.on('connection',ws=>{
  ws.on('close',()=>subs.delete(ws));
 });
 server.listen(PORT,'0.0.0.0',()=>{
- console.log('Rummy Mendocino: servidor listo.\nAbrí en los celulares (mismo WiFi):');
+ console.log('Cuyum Rummy: servidor listo.\nAbrí en los celulares (mismo WiFi):');
  Object.values(os.networkInterfaces()).flat().filter(i=>i&&i.family==='IPv4'&&!i.internal).forEach(i=>console.log('  http://'+i.address+':'+PORT));
  console.log('En la app Android escribí solo la IP y el puerto, por ejemplo 192.168.1.20:3000');
 });

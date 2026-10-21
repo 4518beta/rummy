@@ -1,6 +1,6 @@
-# Rummy Mendocino
+# Cuyum Rummy
 
-Rummy como se juega en Mendoza, para jugar en familia desde el celular. Un mazo de póker con 2 jokers, mezclado en cada mano. Gana el primero que llega a 1000 puntos.
+Juego de cartas Rummy para jugar con amigos desde el celular. Un mazo de póker con 2 jokers, mezclado en cada mano. Gana el primero que llega a 1000 puntos.
 
 ## Cómo abrirlo
 
@@ -14,11 +14,11 @@ Se abre con un link, sin instalar nada. En el celular:
 
 **Jugar** > elegí **1, 2 o 3 rivales**. En la pantalla de conexión que aparece al abrir, tocá **Jugar sin conexión**.
 
-## Jugar en familia
+## Jugar con otras personas
 
 1. Uno toca **Crear mesa nueva** y escribe su nombre. Aparece un código de 5 letras. Ese celular es el anfitrión y tiene que dejar el juego abierto con la pantalla prendida.
 2. Los demás abren el mismo link, escriben su nombre, ponen el código y tocan **Unirme**. También sirve el botón **Compartir** que está en Jugar > Local: arma un link que entra directo.
-3. Entre todos: **Jugar** > **Local (familia)**. Uno crea el grupo, los demás tocan **Unirme al grupo**.
+3. Entre todos: **Jugar** > **Local**. Uno crea el grupo, los demás tocan **Unirme al grupo**.
 4. Uno abre la mesa, los demás tocan **Sentarme**, y se reparte con **Repartir**. Hasta 4 jugadores, se pueden sumar bots.
 
 Funciona con WiFi o datos, desde casas distintas. Si el anfitrión cierra el juego, la mesa se corta. Al volver a entrar y tocar **Crear mesa nueva** recupera el mismo código y la partida.
@@ -54,7 +54,11 @@ En Windows alcanza con doble clic en `Jugar Rummy.bat`. Muestra una dirección c
 
 ### Opcional: APK de Android
 
-La Action `.github/workflows/android.yml` compila un APK de depuración con Capacitor. En la pestaña **Actions** del repositorio, ejecutá "Compilar APK" y bajá `rummy-mendocino-apk`. Para instalarlo hay que permitir "instalar apps desconocidas".
+La Action `.github/workflows/android.yml` compila un APK de depuración con Capacitor. En la pestaña **Actions** del repositorio, ejecutá "Compilar APK" y bajá `cuyum-rummy-apk`. Para instalarlo hay que permitir "instalar apps desconocidas".
+
+## El nombre
+
+Cuyum toma su nombre de una palabra que algunos estudiosos atribuyen a los huarpes, pueblo originario de Cuyo, y que suele traducirse como tierra arenosa. Su origen exacto se discute.
 
 ## Créditos
 

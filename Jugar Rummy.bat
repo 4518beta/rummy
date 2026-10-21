@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title Rummy Mendocino
+title Cuyum Rummy
 cd /d "%~dp0server"
 where node >nul 2>nul
 if errorlevel 1 (
