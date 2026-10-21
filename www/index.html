@@ -308,7 +308,7 @@ function ask(){
  o.style.cssText='position:fixed;inset:0;z-index:99;background:#1d0b36;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;font:22px/1.2 VT323,monospace;color:#fff';
  o.innerHTML='<div style="max-width:360px;width:100%;border:4px solid #fff;background:#000;padding:16px;display:flex;flex-direction:column;gap:10px"><div style="font:400 14px/1.4 \'Press Start 2P\',monospace;color:#ffff00">RUMMY</div>'+
  '<label>Tu nombre<input id="rn" type="text" maxlength="20" style="'+IN+';text-transform:none"></label>'+
- '<button id="rnew" style="'+BT+';background:#ff8a00;color:#000">Crear mesa nueva</button>'+
+ '<button id="rnew" style="'+BT+';background:#ff8a00;color:#000">Crear mesa nueva</button>'+(store.get('rummy_role')==='host'&&store.get('rummy_code')?'<button id="rres" style="'+BT+';background:#000;color:#ff8a00">Retomar mi mesa '+store.get('rummy_code')+'</button>':'')+
  '<div style="color:#a8a8a8;font-size:19px">o unite a la mesa de otro jugador:</div>'+
  '<div style="display:flex;gap:8px"><input id="rc" type="text" maxlength="5" placeholder="CODIGO" style="'+IN+';margin:0;flex:1;min-width:0"><button id="rjoin" style="'+BT+';width:auto;padding:0 14px;background:#000;color:#ff8a00">Unirme</button></div>'+
  '<div id="rmsg" style="color:#ff8a00;min-height:22px"></div>'+
@@ -317,16 +317,17 @@ function ask(){
  '<div id="rsvb" hidden style="display:none;flex-direction:column;gap:8px"><input id="rh" type="text" inputmode="url" placeholder="192.168.1.20:3000" style="'+IN+';text-transform:none"><button id="rhgo" style="'+BT+';background:#000;color:#ff8a00">Conectar</button></div></div>';
  document.body.appendChild(o);
  var $=function(i){return o.querySelector('#'+i)},msg=function(t){$('rmsg').textContent=t};
- $('rn').value=cfg.name;$('rc').value=qs?cfg.code:'';$('rh').value=cfg.host;
+ $('rn').value=cfg.name;$('rc').value=qs?String(qs).toUpperCase():'';$('rh').value=cfg.host;
  function name(){var n=($('rn').value||'').trim()||'Jugador';cfg.name=n;store.set('rummy_name',n);return n}
  function ok(){o.remove();resolveReady()}
  function busy(b){['rnew','rjoin','rno'].forEach(function(i){$(i).disabled=b})}
- $('rnew').onclick=function(){name();busy(true);msg('Creando la mesa...');var tries=0;(function go(){var c=(store.get('rummy_role')==='host'&&store.get('rummy_code')&&tries===0)?store.get('rummy_code'):newCode();tries++;startHost(c,function(e){if(!e)return ok();if(e.type==='unavailable-id'&&tries<4){try{peer.destroy()}catch(x){}return go()}busy(false);msg(e.message==='sin-lib'?'Hace falta internet para crear la mesa.':'No se pudo crear la mesa. Probá de nuevo.')})})()};
- $('rjoin').onclick=function(){var c=($('rc').value||'').trim().toUpperCase();if(c.length<4){msg('Escribí el código de 5 letras.');return}name();busy(true);msg('Buscando la mesa...');startGuest(c,function(e){if(!e)return ok();busy(false);try{peer.destroy()}catch(x){}msg(e.message==='sin-lib'?'Hace falta internet para unirte.':'No encuentro esa mesa. Revisá el código y que el anfitrión tenga la app abierta.')})};
+ function hostGo(code,fresh){name();busy(true);msg('Creando la mesa...');if(fresh){store.set('rummy_hub','')}var tries=0;(function go(){var c=(tries===0&&code)?code:newCode();tries++;startHost(c,function(e){if(!e)return ok();if(e.type==='unavailable-id'&&tries<4){try{peer.destroy()}catch(x){}code=null;return go()}busy(false);msg(e.message==='sin-lib'?'Hace falta internet para crear la mesa.':'No se pudo crear la mesa ('+(window.RUMMY_LASTERR||'error')+'). Probá de nuevo.')})})()}
+ $('rnew').onclick=function(){hostGo(null,true)};
+ if($('rres'))$('rres').onclick=function(){hostGo(store.get('rummy_code'),false)};
+ $('rjoin').onclick=function(){var c=($('rc').value||'').trim().toUpperCase();if(c.length<4){msg('Escribí el código de 5 letras.');return}name();busy(true);msg('Buscando la mesa...');startGuest(c,function(e){if(!e)return ok();busy(false);try{peer.destroy()}catch(x){}msg(e.message==='sin-lib'?'Hace falta internet para unirte.':'No encuentro esa mesa ('+(window.RUMMY_LASTERR||'sin respuesta')+'). Revisá el código y que quien la creó tenga el juego abierto.')})};
  $('rno').onclick=function(){offline=true;o.remove();rejectReady(new Error('offline'))};
  $('rsv').onclick=function(){var b=$('rsvb');b.style.display=b.style.display==='none'?'flex':'none'};
  $('rhgo').onclick=function(){name();var raw=($('rh').value||'').trim();if(!raw)return;secure=/^(https|wss):/.test(raw);store.set('rummy_secure',secure?'1':'0');var ho=raw.replace(/^(https?|wss?):\/\//,'').replace(/\/+$/,'');cfg.host=(ho.indexOf(':')<0&&!secure)?ho+':3000':ho;store.set('rummy_host',cfg.host);wsConnect();ok()};
- if(qs){setTimeout(function(){$('rjoin').click()},50)}
 }
 function badge(){var d=document.createElement('div');d.id='rdot';d.style.cssText='position:fixed;right:max(6px,env(safe-area-inset-right,0px));top:max(6px,env(safe-area-inset-top,0px));width:10px;height:10px;border:2px solid #000;background:#ff4a4a;z-index:50;pointer-events:none';document.body.appendChild(d)}
 function start(){badge();ask()}
@@ -1311,6 +1312,7 @@ async function init(){
   if(USER){try{ME=await USER.me();MYID=ME.id;if(MYID)names[MYID]=ME.name||'Vos';avs[MYID]=ME.avatarUrl;var cw=await USER.can('data.write');CANW=cw!==false}catch(e){}}
   try{DB=await cl.use('db')}catch(e){}
  }
+ if(window.RUMMY_CODE)view='panel';
  if(DB&&MYID){
   groupRef=DB.doc('family/group');tableRef=DB.doc('family/table');histRef=DB.collection('history');
   groupRef.onSnapshot(function(s){GROUP=s.exists?s.data():null;render()},function(){});
