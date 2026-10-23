@@ -2,6 +2,5 @@
   "appId": "ar.cuyum.rummy",
   "appName": "Cuyum Rummy",
   "webDir": "www",
-  "server": { "androidScheme": "http", "cleartext": true },
   "backgroundColor": "#1d0b36"
 }
